@@ -4,16 +4,20 @@ import {
     onAuthStateChanged,
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
+    signInWithPopup,
     signOut,
     updateProfile
 } from 'firebase/auth';
-import { auth, db } from '../config/firebase';
+import { auth, db, googleProvider } from '../config/firebase';
 import { doc, setDoc } from 'firebase/firestore';
+import { Heart } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 interface AuthContextType {
     currentUser: User | null;
     loading: boolean;
     login: (email: string, password: string) => Promise<void>;
+    signInWithGoogle: () => Promise<void>;
     signup: (email: string, password: string, name?: string) => Promise<void>;
     logout: () => Promise<void>;
 }
@@ -43,6 +47,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const login = (email: string, password: string) => {
         return signInWithEmailAndPassword(auth, email, password).then(() => { });
+    };
+
+    const signInWithGoogle = async () => {
+        const userCredential = await signInWithPopup(auth, googleProvider);
+        const user = userCredential.user;
+
+        // Sync to Firestore in the background
+        const syncToFirestore = async () => {
+            try {
+                const docRef = doc(db, 'users', user.uid);
+                await setDoc(docRef, {
+                    uid: user.uid,
+                    email: user.email,
+                    displayName: user.displayName || '',
+                    lastLogin: new Date().toISOString(),
+                }, { merge: true });
+            } catch (error) {
+                console.error("AuthContext: Background sync failed", error);
+            }
+        };
+        syncToFirestore();
     };
 
     const signup = async (email: string, password: string, name?: string) => {
@@ -90,6 +115,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentUser,
         loading,
         login,
+        signInWithGoogle,
         signup,
         logout
     };
@@ -97,14 +123,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return (
         <AuthContext.Provider value={value}>
             {loading ? (
-                <div className="min-h-screen bg-white flex flex-col items-center justify-center">
-                    <div className="relative">
-                        <div className="w-16 h-16 border-4 border-blue-50 border-t-blue-600 rounded-full animate-spin"></div>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+                <div className="min-h-screen bg-white flex flex-col items-center justify-center overflow-hidden">
+                    <div className="relative flex flex-col items-center">
+                        {/* Premium Breathing Animation */}
+                        <motion.div
+                            initial={{ scale: 0.8, opacity: 0.5 }}
+                            animate={{
+                                scale: [1, 1.2, 1],
+                                opacity: [0.5, 1, 0.5],
+                                rotate: [0, 5, -5, 0]
+                            }}
+                            transition={{
+                                duration: 3,
+                                repeat: Infinity,
+                                ease: "easeInOut"
+                            }}
+                            className="w-24 h-24 bg-brand-primary/5 rounded-[2.5rem] flex items-center justify-center relative mb-8"
+                        >
+                            <div className="absolute inset-0 bg-brand-primary opacity-10 rounded-[2.5rem] blur-2xl animate-pulse"></div>
+                            <Heart className="w-10 h-10 text-brand-primary fill-brand-primary" />
+                        </motion.div>
+
+                        <div className="flex flex-col items-center">
+                            <h2 className="text-xl font-black text-brand-dark tracking-tighter mb-1">KIDDOO</h2>
+                            <p className="text-brand-medium text-[8px] font-bold uppercase tracking-[0.5em] opacity-40 ml-1">Secure Environment</p>
+                        </div>
+
+                        {/* Minimalist Progress Line */}
+                        <div className="w-32 h-[1px] bg-brand-light mt-8 relative overflow-hidden">
+                            <motion.div
+                                animate={{ x: [-128, 128] }}
+                                transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                                className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-transparent via-brand-primary/50 to-transparent"
+                            />
                         </div>
                     </div>
-                    <p className="mt-4 text-brand-medium text-xs font-black uppercase tracking-[0.2em] animate-pulse">Initializing Security...</p>
                 </div>
             ) : children}
         </AuthContext.Provider>

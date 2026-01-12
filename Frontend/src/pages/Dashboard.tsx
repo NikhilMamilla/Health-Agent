@@ -21,7 +21,8 @@ import {
     User,
     ArrowUpRight,
     Plus,
-    X
+    X,
+    Menu
 } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { exportToCSV, exportToPDF } from '../utils/exportUtils';
@@ -41,14 +42,26 @@ interface SOSLog {
 
 const Dashboard: React.FC = () => {
     const { currentUser, logout } = useAuth();
-    const [history, setHistory] = useState<HistoryItem[]>([]);
-    const [sosLogs, setSosLogs] = useState<SOSLog[]>([]);
+    const [history, setHistory] = useState<HistoryItem[]>(() => {
+        const cached = localStorage.getItem('kiddoo_history_cache');
+        return cached ? JSON.parse(cached) : [];
+    });
+    const [sosLogs, setSosLogs] = useState<SOSLog[]>(() => {
+        const cached = localStorage.getItem('kiddoo_sos_cache');
+        return cached ? JSON.parse(cached) : [];
+    });
     const [historyLoading, setHistoryLoading] = useState(true);
     const [sosLoading, setSosLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('overview');
     const [searchQuery, setSearchQuery] = useState('');
     const [showNotifications, setShowNotifications] = useState(false);
+    const [imgError, setImgError] = useState(false);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const navigate = useNavigate();
+
+    useEffect(() => {
+        setImgError(false);
+    }, [currentUser?.photoURL]);
 
     useEffect(() => {
         if (!currentUser) {
@@ -57,10 +70,12 @@ const Dashboard: React.FC = () => {
             return;
         }
 
-        const syncTimeout = setTimeout(() => {
+
+        // Optimistic finish: If Firestore is slow, don't leave the user hanging on "..."
+        const loadingFallback = setTimeout(() => {
             setHistoryLoading(false);
             setSosLoading(false);
-        }, 3000);
+        }, 1000); // 1s is the new "instant" threshold
 
         const historyRef = collection(db, 'users', currentUser.uid, 'history');
         const historyQuery = query(historyRef, orderBy('timestamp', 'desc'), limit(50));
@@ -74,6 +89,7 @@ const Dashboard: React.FC = () => {
                 ...doc.data()
             } as HistoryItem));
             setHistory(historyData);
+            localStorage.setItem('kiddoo_history_cache', JSON.stringify(historyData));
             setHistoryLoading(false);
         }, (error) => {
             console.error("Error listening to history:", error);
@@ -86,6 +102,7 @@ const Dashboard: React.FC = () => {
                 ...doc.data()
             } as SOSLog));
             setSosLogs(sosData);
+            localStorage.setItem('kiddoo_sos_cache', JSON.stringify(sosData));
             setSosLoading(false);
         }, (error) => {
             console.error("Error listening to SOS logs:", error);
@@ -93,7 +110,7 @@ const Dashboard: React.FC = () => {
         });
 
         return () => {
-            clearTimeout(syncTimeout);
+            clearTimeout(loadingFallback);
             unsubHistory();
             unsubSos();
         };
@@ -170,6 +187,86 @@ const Dashboard: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-brand-light text-brand-dark font-sans selection:bg-brand-medium/30 selection:text-brand-dark">
+            {/* Mobile Menu Overlay */}
+            <AnimatePresence>
+                {isMobileMenuOpen && (
+                    <>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="fixed inset-0 bg-brand-dark/50 backdrop-blur-sm z-50 lg:hidden"
+                        />
+                        <motion.aside
+                            initial={{ x: -300 }}
+                            animate={{ x: 0 }}
+                            exit={{ x: -300 }}
+                            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                            className="fixed top-0 left-0 w-3/4 max-w-sm h-full bg-white z-[51] shadow-2xl p-6 flex flex-col lg:hidden"
+                        >
+                            <div className="flex items-center justify-between mb-8">
+                                <Link to="/" className="flex items-center">
+                                    <Activity className="w-8 h-8 text-brand-primary mr-3" />
+                                    <span className="font-bold text-xl text-brand-dark">KIDDOO</span>
+                                </Link>
+                                <button
+                                    onClick={() => setIsMobileMenuOpen(false)}
+                                    className="p-2 text-brand-medium hover:bg-brand-light rounded-full transition-colors"
+                                >
+                                    <X className="w-6 h-6" />
+                                </button>
+                            </div>
+
+                            <nav className="space-y-2 flex-grow">
+                                <button
+                                    onClick={() => { setActiveTab('overview'); setIsMobileMenuOpen(false); }}
+                                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'overview' ? 'bg-brand-light text-brand-primary font-bold shadow-sm' : 'text-brand-medium hover:bg-brand-light hover:text-brand-primary'}`}
+                                >
+                                    <LayoutGrid className="w-5 h-5" />
+                                    <span>Overview</span>
+                                </button>
+                                <button
+                                    onClick={() => { setActiveTab('history'); setIsMobileMenuOpen(false); }}
+                                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'history' ? 'bg-brand-light text-brand-primary font-bold shadow-sm' : 'text-brand-medium hover:bg-brand-light hover:text-brand-primary'}`}
+                                >
+                                    <History className="w-5 h-5" />
+                                    <span>Usage History</span>
+                                </button>
+                                <button
+                                    onClick={() => { setActiveTab('alerts'); setIsMobileMenuOpen(false); }}
+                                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'alerts' ? 'bg-brand-light text-brand-primary font-bold shadow-sm' : 'text-brand-medium hover:bg-brand-light hover:text-brand-primary'}`}
+                                >
+                                    <Bell className="w-5 h-5" />
+                                    <span>SOS Alerts</span>
+                                </button>
+                            </nav>
+
+                            <div className="mt-auto">
+                                <div className="bg-brand-dark rounded-2xl p-5 text-white relative overflow-hidden group mb-4">
+                                    <div className="absolute -right-4 -top-4 w-24 h-24 bg-brand-primary/20 rounded-full blur-2xl group-hover:bg-brand-primary/30 transition-all"></div>
+                                    <h4 className="text-sm text-brand-light font-bold mb-1 relative z-10 tracking-wide">LIVE SECURITY</h4>
+                                    <p className="text-[10px] text-brand-light/70 relative z-10 mb-4 font-bold uppercase tracking-tighter">
+                                        Status: <span className="text-brand-primary">{sosLogs.length > 0 ? "ALERT LOGGED" : "MONITORING"}</span>
+                                    </p>
+                                    <div className="w-full py-2 bg-white/10 text-brand-light rounded-lg text-[10px] font-black text-center border border-white/10 uppercase tracking-[0.2em]">
+                                        v1.0.5 STABLE
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={handleLogout}
+                                    className="w-full flex items-center space-x-3 px-4 py-3 text-brand-medium hover:text-brand-primary hover:bg-brand-light rounded-xl transition-all font-semibold"
+                                >
+                                    <LogOut className="w-5 h-5" />
+                                    <span>Log out</span>
+                                </button>
+                            </div>
+                        </motion.aside>
+                    </>
+                )}
+            </AnimatePresence>
+
             {/* Sidebar Navigation */}
             <aside className="fixed left-0 top-0 bottom-0 w-64 bg-white border-r border-brand-medium hidden lg:flex flex-col z-50">
                 <div className="p-6">
@@ -177,7 +274,7 @@ const Dashboard: React.FC = () => {
                         <div className="w-10 h-10 bg-brand-primary rounded-xl flex items-center justify-center shadow-lg shadow-brand-primary/30">
                             <Activity className="w-6 h-6 text-white" />
                         </div>
-                        <span className="font-bold text-xl tracking-tight text-brand-dark">HealthAgent</span>
+                        <span className="font-bold text-xl tracking-tight text-brand-dark">KIDDOO</span>
                     </Link>
                 </div>
 
@@ -208,10 +305,12 @@ const Dashboard: React.FC = () => {
                 <div className="p-4 mt-auto">
                     <div className="bg-brand-dark rounded-2xl p-5 text-white relative overflow-hidden group">
                         <div className="absolute -right-4 -top-4 w-24 h-24 bg-brand-primary/20 rounded-full blur-2xl group-hover:bg-brand-primary/30 transition-all"></div>
-                        <h4 className="text-sm text-brand-light font-bold mb-1 relative z-10">Live Security</h4>
-                        <p className="text-xs text-brand-light/70 relative z-10 mb-4">Real-time protection is {sosLogs.length > 0 ? "active" : "monitoring"}.</p>
-                        <div className="w-full py-2 bg-white/10 text-white rounded-lg text-xs font-bold text-center border border-white/10">
-                            v1.0.4 Stable
+                        <h4 className="text-sm text-brand-light font-bold mb-1 relative z-10 tracking-wide">LIVE SECURITY</h4>
+                        <p className="text-[10px] text-brand-light/70 relative z-10 mb-4 font-bold uppercase tracking-tighter">
+                            Status: <span className="text-brand-primary">{sosLogs.length > 0 ? "ALERT LOGGED" : "MONITORING"}</span>
+                        </p>
+                        <div className="w-full py-2 bg-white/10 text-brand-light rounded-lg text-[10px] font-black text-center border border-white/10 uppercase tracking-[0.2em]">
+                            v1.0.5 STABLE
                         </div>
                     </div>
 
@@ -230,9 +329,15 @@ const Dashboard: React.FC = () => {
                 {/* Header */}
                 <header className="h-20 bg-white/80 backdrop-blur-md border-b border-brand-light sticky top-0 z-40 flex items-center justify-between px-6 lg:px-10">
                     <div className="flex items-center lg:hidden">
+                        <button
+                            onClick={() => setIsMobileMenuOpen(true)}
+                            className="mr-4 p-2 -ml-2 text-brand-dark hover:bg-brand-light rounded-lg transition-colors"
+                        >
+                            <Menu className="w-6 h-6" />
+                        </button>
                         <Link to="/" className="flex items-center">
                             <Activity className="w-8 h-8 text-brand-primary mr-3" />
-                            <span className="font-bold text-lg text-brand-dark">HealthAgent</span>
+                            <span className="font-bold text-lg text-brand-dark">KIDDOO</span>
                         </Link>
                     </div>
 
@@ -264,7 +369,7 @@ const Dashboard: React.FC = () => {
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={{ opacity: 0, y: 10 }}
-                                        className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-brand-medium overflow-hidden z-50"
+                                        className="fixed top-20 left-4 right-4 md:absolute md:top-auto md:left-auto md:right-0 md:mt-2 md:w-80 bg-white rounded-2xl shadow-2xl border border-brand-medium overflow-hidden z-[100]"
                                     >
                                         <div className="p-4 border-b border-brand-light flex items-center justify-between bg-brand-light/50">
                                             <h4 className="font-bold text-brand-dark text-sm">Notifications</h4>
@@ -284,8 +389,22 @@ const Dashboard: React.FC = () => {
                                 )}
                             </AnimatePresence>
                         </div>
-                        <div className="h-10 w-10 bg-brand-light rounded-full border border-brand-medium flex items-center justify-center text-brand-primary overflow-hidden">
-                            {currentUser?.photoURL ? <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" /> : <User className="w-5 h-5" />}
+                        <div className="h-10 w-10 bg-brand-light rounded-full border border-brand-medium flex items-center justify-center text-brand-primary overflow-hidden font-bold text-lg">
+                            {currentUser?.photoURL && !imgError ? (
+                                <img
+                                    src={currentUser.photoURL}
+                                    alt="Profile"
+                                    className="w-full h-full object-cover"
+                                    onError={() => setImgError(true)}
+                                />
+                            ) : (
+                                <span>
+                                    {currentUser?.displayName
+                                        ? currentUser.displayName.charAt(0).toUpperCase()
+                                        : (currentUser?.email?.charAt(0).toUpperCase() || <User className="w-5 h-5" />)
+                                    }
+                                </span>
+                            )}
                         </div>
                     </div>
                 </header>
@@ -345,7 +464,7 @@ const Dashboard: React.FC = () => {
                                         <div className="space-y-1">
                                             <h3 className="text-sm font-bold text-brand-medium uppercase tracking-wider">Interactions</h3>
                                             <div className="text-4xl font-black text-brand-dark leading-none">
-                                                {historyLoading ? "..." : history.length}
+                                                {history.length}
                                             </div>
                                             <p className="text-[10px] text-brand-primary font-bold uppercase tracking-tighter pt-2">Total Queries Answered</p>
                                         </div>
@@ -359,7 +478,7 @@ const Dashboard: React.FC = () => {
                                         <div className="space-y-1">
                                             <h3 className="text-sm font-bold text-brand-medium uppercase tracking-wider">SOS Lifecycle</h3>
                                             <div className="text-4xl font-black text-brand-dark leading-none">
-                                                {sosLoading ? "..." : sosLogs.length}
+                                                {sosLogs.length}
                                             </div>
                                             <p className="text-[10px] text-brand-primary font-bold uppercase tracking-tighter pt-2">Active Monitor</p>
                                         </div>
@@ -373,7 +492,7 @@ const Dashboard: React.FC = () => {
                                         <div className="space-y-1">
                                             <h3 className="text-sm font-bold text-brand-medium uppercase tracking-wider">System Check</h3>
                                             <div className="text-2xl font-black text-brand-primary leading-none py-1">
-                                                {historyLoading || sosLoading ? "SYNCING..." : "PROTECTED"}
+                                                SECURE
                                             </div>
                                             <p className="text-[10px] text-brand-medium font-bold uppercase tracking-tighter pt-2">End-to-End Encrypted</p>
                                         </div>
@@ -384,8 +503,8 @@ const Dashboard: React.FC = () => {
                                         <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform relative z-10">
                                             <Plus className="w-6 h-6" />
                                         </div>
-                                        <h3 className="font-bold mb-1 relative z-10">New Interaction</h3>
-                                        <p className="text-brand-light/70 text-xs relative z-10">Consult with Agent</p>
+                                        <h3 className="font-bold text-lg text-brand-white/90 uppercase mb-1 relative z-10">New Interaction</h3>
+                                        <p className="text-brand-white/70 text-xs relative z-10">Consult with Agent</p>
                                     </Link>
                                 </motion.div>
 
@@ -420,7 +539,8 @@ const Dashboard: React.FC = () => {
                                         )) : (
                                             <div className="p-20 text-center">
                                                 <History className="w-12 h-12 text-brand-light mx-auto mb-4" />
-                                                <p className="text-brand-medium font-bold">No interactions found.</p>
+                                                <p className="text-brand-medium font-bold">It's quiet here.</p>
+                                                <p className="text-brand-medium/50 text-xs font-bold mt-2">I'm ready to listen whenever you're ready to share.</p>
                                             </div>
                                         )}
                                     </div>
@@ -447,7 +567,7 @@ const Dashboard: React.FC = () => {
                                             )) : (
                                                 <div className="py-12 text-center text-brand-medium">
                                                     <Shield className="w-12 h-12 text-brand-light mx-auto mb-4" />
-                                                    <p className="text-[10px] font-bold uppercase tracking-widest">No Alerts Recorded</p>
+                                                    <p className="text-[10px] font-bold uppercase tracking-widest">Safety Status: Secure</p>
                                                 </div>
                                             )}
                                         </div>
@@ -455,16 +575,14 @@ const Dashboard: React.FC = () => {
 
                                     <div className="bg-white rounded-[2.5rem] border border-brand-light shadow-2xl shadow-brand-medium/10 p-8 relative overflow-hidden group">
                                         <div className="absolute top-0 right-0 w-32 h-32 bg-brand-light rounded-full blur-3xl -mr-16 -mt-16 group-hover:scale-150 transition-transform"></div>
-                                        <h3 className="text-lg font-black text-brand-dark mb-2 relative z-10">System Identity</h3>
+                                        <h3 className="text-lg font-black text-brand-dark mb-2 relative z-10">KIDDOO Agent Snapshot</h3>
                                         <p className="text-sm text-brand-medium mb-6 relative z-10 leading-relaxed font-bold">
-                                            Rebranded successfully. I am using the official 4-color palette exclusively across this interface.
+                                            Your safety agent is active. {sosLogs.length > 0 ? "Emergency alerts have been detected recently. Please check the 'Alerts' tab for details." : "No emergency triggers detected in current session."}
                                         </p>
-                                        <button
-                                            onClick={handleExportPDF}
-                                            className="w-full py-3 bg-brand-light text-brand-primary rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-brand-medium hover:text-white transition-all relative z-10 border border-brand-medium"
-                                        >
-                                            Generate Identity Audit
-                                        </button>
+                                        <div className="flex items-center gap-2 relative z-10">
+                                            <div className="w-2 h-2 bg-brand-primary rounded-full animate-pulse" />
+                                            <span className="text-[10px] font-black uppercase text-brand-primary tracking-widest">Agent Monitoring Active</span>
+                                        </div>
                                     </div>
                                 </motion.div>
                             </motion.div>
@@ -527,7 +645,7 @@ const Dashboard: React.FC = () => {
                                     {sosLogs.length === 0 && (
                                         <div className="col-span-2 py-20 text-center text-brand-medium font-bold">
                                             <Shield className="w-16 h-16 mx-auto mb-4 opacity-10" />
-                                            No emergency alerts found in your account history.
+                                            No emergency alerts found. You are doing great!
                                         </div>
                                     )}
                                 </div>

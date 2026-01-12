@@ -81,18 +81,18 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     };
 
     return (
-        <div className="bg-white/80 backdrop-blur-sm p-4 relative">
+        <div className="bg-white/80 backdrop-blur-sm p-2 sm:p-4 relative">
             {/* Emoji Picker Popup */}
             {showEmojiPicker && (
                 <div
                     ref={emojiPickerRef}
-                    className="absolute bottom-full mb-2 left-4 right-4 lg:left-auto lg:right-auto lg:w-96 bg-white rounded-2xl shadow-2xl border border-brand-light overflow-hidden z-50 animate-scale-in"
+                    className="absolute bottom-full mb-2 left-2 right-2 sm:left-4 sm:right-4 lg:left-auto lg:right-auto lg:w-96 bg-white rounded-2xl shadow-2xl border border-brand-light overflow-hidden z-50 animate-scale-in"
                 >
                     {/* Header */}
                     <div className="bg-brand-primary p-3 text-white">
                         <div className="flex items-center gap-2">
                             <Sparkles size={16} />
-                            <h3 className="text-sm font-bold uppercase tracking-wider">Express Yourself</h3>
+                            <h3 className="text-sm text-white font-bold uppercase tracking-wider">Express Yourself</h3>
                         </div>
                     </div>
 
@@ -129,12 +129,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             )}
 
             {/* Input Form */}
-            <form onSubmit={handleSubmit} className="flex items-center gap-2 max-w-3xl mx-auto">
+            <form onSubmit={handleSubmit} className="flex items-center gap-2 max-w-3xl mx-auto w-full">
                 {/* Emoji Button */}
                 <button
                     type="button"
                     onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    className={`p-2 rounded-full transition-all ${showEmojiPicker
+                    className={`p-2 rounded-full transition-all shrink-0 ${showEmojiPicker
                         ? 'bg-brand-primary text-white shadow-lg'
                         : 'text-brand-medium hover:text-brand-primary hover:bg-brand-light'
                         }`}
@@ -152,14 +152,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                     onKeyDown={handleKeyDown}
                     placeholder="Type your message..."
                     disabled={isDisabled}
-                    className="flex-1 px-4 py-2.5 border border-brand-medium rounded-full focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary disabled:opacity-50 transition-all text-sm font-medium placeholder-brand-medium"
+                    className="flex-1 w-full min-w-0 px-4 py-2.5 border border-brand-medium rounded-full focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary disabled:opacity-50 transition-all text-sm font-medium placeholder-brand-medium"
                 />
 
                 {/* Send Button */}
                 <button
                     type="submit"
                     disabled={!message.trim() || isDisabled}
-                    className="p-2.5 bg-brand-primary text-white rounded-full hover:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-brand-primary/20 disabled:shadow-none group"
+                    className="p-2.5 bg-brand-primary text-white rounded-full hover:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-brand-primary/20 disabled:shadow-none group shrink-0"
                     aria-label="Send message"
                 >
                     <Send size={20} className="group-hover:translate-x-0.5 transition-transform" />

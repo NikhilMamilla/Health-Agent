@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChatInterface } from '../components/ChatInterface';
 import DashboardGrid from '../components/DashboardGrid';
 import CalmCircle from '../components/CalmCircle';
@@ -11,19 +11,23 @@ import { generateGroqResponse } from '../services/groqService';
 import type { Message } from '../types/chat';
 import type { TypingMetrics } from '../types/metrics';
 import type { BDIResult } from '../types/bdi';
-import { Heart, AlertTriangle, Menu, History, Fingerprint, LogOut, LayoutDashboard, LogIn } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Heart, AlertTriangle, Menu, History, Fingerprint, LogOut, LayoutDashboard, LogIn, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { db } from '../config/firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, query, orderBy, onSnapshot, limit } from 'firebase/firestore';
 
 const Home: React.FC = () => {
+    const hydrationRef = useRef(false);
     const [analysisResult, setAnalysisResult] = useState<AnalysisResponse | null>(null);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    // If brand new user with no history, set initial greeting
     const [messages, setMessages] = useState<Message[]>([
         {
             id: '1',
             role: 'assistant',
-            content: "Hello. I'm here to listen and support you. Type a message and I will analyze your health state.",
+            content: "Hello! I am KIDDOO, and I'm so glad you're here. My only goal is to support you and make sure you feel heard. How are you feeling in this moment?",
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
     ]);
@@ -36,6 +40,87 @@ const Home: React.FC = () => {
     const [mobileTab, setMobileTab] = useState<'chat' | 'dashboard'>('chat');
     const { currentUser, logout } = useAuth();
     const navigate = useNavigate();
+    const dashboardScrollRef = useRef<HTMLElement>(null);
+
+    // Auto-scroll to top when switching to dashboard tab
+    useEffect(() => {
+        if (mobileTab === 'dashboard') {
+            setTimeout(() => {
+                if (dashboardScrollRef.current) {
+                    dashboardScrollRef.current.scrollTop = 0;
+                }
+                window.scrollTo(0, 0);
+            }, 100);
+        }
+    }, [mobileTab]);
+
+    // HYDRATION: Fetch history on mount/re-login
+    useEffect(() => {
+        if (!currentUser) {
+            setHistory([]);
+            return;
+        }
+
+        const historyRef = collection(db, 'users', currentUser.uid, 'history');
+        const historyQuery = query(historyRef, orderBy('timestamp', 'desc'), limit(50));
+
+        const unsubscribe = onSnapshot(historyQuery, (snapshot) => {
+            const historyData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            } as any)).reverse();
+
+            // 1. Update History state for Analytics (always update this to keep charts live)
+            setHistory(historyData.map(item => ({
+                message: item.message,
+                timestamp: new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                classified_state: item.classified_state,
+                intensity_score: item.intensity_score || 0,
+                sentiment_label: item.sentiment_label,
+                sos_triggered: item.sos_triggered
+            })));
+
+            // 2. Hydrate Chat Messages & Analysis ONLY ONCE (on initial mount)
+            if (!hydrationRef.current && snapshot.metadata.fromCache === false) {
+                const lastItem = historyData[historyData.length - 1];
+
+                if (lastItem) {
+                    // Only hydrate messages if the user hasn't sent anything yet
+                    setMessages(prev => {
+                        if (prev.length <= 1) { // Only if still on initial greeting
+                            return [
+                                {
+                                    id: 'initial',
+                                    role: 'assistant',
+                                    content: `Welcome back! I am KIDDOO. I've been thinking about our last chat where we spoke about "${lastItem.message.slice(0, 30)}...". How have you been since then? I'm here to listen.`,
+                                    timestamp: new Date(lastItem.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                }
+                            ];
+                        }
+                        return prev;
+                    });
+
+                    // Only hydrate analysis if not already set by a new message
+                    setAnalysisResult(prev => {
+                        if (prev === null) {
+                            return {
+                                classified_state: lastItem.classified_state,
+                                intensity_score: lastItem.intensity_score || 0,
+                                sentiment_analysis: { label: lastItem.sentiment_label, score: 0.5 },
+                                autonomous_action: { sos_triggered: lastItem.sos_triggered, message: "" }
+                            } as any;
+                        }
+                        return prev;
+                    });
+                }
+                hydrationRef.current = true;
+            }
+        }, (error) => {
+            console.error("Hydration failed:", error);
+        });
+
+        return () => unsubscribe();
+    }, [currentUser]);
 
     const handleSOS = async () => {
         try {
@@ -91,6 +176,11 @@ const Home: React.FC = () => {
                 timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             };
             setMessages(prev => [...prev, assistantMsg]);
+
+            // Auto-switch to Insights on mobile after 5 seconds
+            setTimeout(() => {
+                setMobileTab('dashboard');
+            }, 5000);
 
             // Save to Firestore if logged in
             if (currentUser) {
@@ -151,7 +241,7 @@ const Home: React.FC = () => {
                             <Heart className="text-white fill-white" size={20} />
                         </div>
                         <div>
-                            <h1 className="text-lg font-bold text-brand-dark leading-none tracking-tight">Supportive Space</h1>
+                            <h1 className="text-lg font-black text-brand-dark leading-none tracking-tight">KIDDOO</h1>
                             <p className="text-[10px] uppercase font-bold text-brand-primary tracking-widest mt-0.5 font-sans">Autonomous Support Agent</p>
                         </div>
                     </div>
@@ -165,70 +255,174 @@ const Home: React.FC = () => {
                             <span className="text-xs font-bold uppercase tracking-widest">History</span>
                         </button>
 
-                        <div className={`flex items-center gap-3 px-4 py-2 rounded-xl border-2 transition-all duration-300 ${reviewMode
-                            ? 'bg-brand-light border-brand-primary shadow-lg shadow-brand-primary/10'
-                            : 'bg-white border-brand-light hover:border-brand-medium'
-                            }`}>
-                            <div className="flex flex-col">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-brand-medium">Review Mode</span>
-                                {reviewMode && (
-                                    <span className="text-[8px] font-black uppercase tracking-widest text-brand-primary animate-pulse">● ACTIVE</span>
-                                )}
-                            </div>
-                            <button
-                                onClick={() => setReviewMode(!reviewMode)}
-                                className={`w-12 h-6 rounded-full transition-all duration-300 relative ${reviewMode ? 'bg-brand-primary shadow-lg shadow-brand-primary/30' : 'bg-brand-medium/30'
-                                    }`}
-                            >
-                                <div
-                                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-300 ${reviewMode ? 'right-0.5' : 'left-0.5'
-                                        }`}
-                                />
-                            </button>
-                        </div>
-
+                        {/* Mobile Menu Toggle */}
                         <button
-                            onClick={handleSOS}
-                            className="bg-brand-dark text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest flex items-center gap-2 border border-brand-dark hover:bg-brand-primary transition-all shadow-sm active:scale-95"
+                            onClick={() => setIsMobileMenuOpen(true)}
+                            className="lg:hidden p-2 text-brand-dark hover:bg-brand-light rounded-lg transition-colors"
                         >
-                            <AlertTriangle size={16} />
-                            <span>Emergency SOS</span>
+                            <Menu size={24} />
                         </button>
 
-                        <div className="h-8 w-px bg-brand-medium/20 mx-1"></div>
-
-                        {currentUser ? (
-                            <div className="flex items-center gap-3">
-                                <Link
-                                    to="/dashboard"
-                                    className="flex items-center gap-2 text-brand-medium hover:text-brand-primary transition-colors px-3 py-2 rounded-lg hover:bg-brand-light"
-                                >
-                                    <LayoutDashboard size={18} />
-                                    <span className="hidden xl:inline text-xs font-bold uppercase tracking-widest">Dashboard</span>
-                                </Link>
+                        {/* Desktop Controls */}
+                        <div className="hidden lg:flex items-center gap-6">
+                            <div className={`flex items-center gap-3 px-4 py-2 rounded-xl border-2 transition-all duration-300 ${reviewMode
+                                ? 'bg-brand-light border-brand-primary shadow-lg shadow-brand-primary/10'
+                                : 'bg-white border-brand-light hover:border-brand-medium'
+                                }`}>
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-brand-medium">Review Mode</span>
+                                    {reviewMode && (
+                                        <span className="text-[8px] font-black uppercase tracking-widest text-brand-primary animate-pulse">● ACTIVE</span>
+                                    )}
+                                </div>
                                 <button
-                                    onClick={() => logout()}
-                                    className="flex items-center gap-2 text-brand-medium hover:text-brand-dark transition-colors px-3 py-2 rounded-lg hover:bg-brand-light"
+                                    onClick={() => setReviewMode(!reviewMode)}
+                                    className={`w-12 h-6 rounded-full transition-all duration-300 relative ${reviewMode ? 'bg-brand-primary shadow-lg shadow-brand-primary/30' : 'bg-brand-medium/30'
+                                        }`}
                                 >
-                                    <LogOut size={18} />
-                                    <span className="hidden xl:inline text-xs font-bold uppercase tracking-widest">Logout</span>
+                                    <div
+                                        className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-300 ${reviewMode ? 'right-0.5' : 'left-0.5'
+                                            }`}
+                                    />
                                 </button>
                             </div>
-                        ) : (
-                            <Link
-                                to="/login"
-                                className="flex items-center gap-2 bg-brand-primary text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-dark transition-all shadow-lg shadow-brand-primary/20 active:scale-95"
+
+                            <button
+                                onClick={handleSOS}
+                                className="bg-red-600 text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest flex items-center gap-2 border border-red-600 hover:bg-red-700 transition-all shadow-lg shadow-red-600/30 active:scale-95 animate-pulse"
                             >
-                                <LogIn size={16} />
-                                <span>Login</span>
-                            </Link>
-                        )}
+                                <AlertTriangle size={16} />
+                                <span>Emergency SOS</span>
+                            </button>
+
+                            <div className="h-8 w-px bg-brand-medium/20 mx-1"></div>
+
+                            {currentUser ? (
+                                <div className="flex items-center gap-3">
+                                    <Link
+                                        to="/dashboard"
+                                        className="flex items-center gap-2 text-brand-medium hover:text-brand-primary transition-colors px-3 py-2 rounded-lg hover:bg-brand-light"
+                                    >
+                                        <LayoutDashboard size={18} />
+                                        <span className="hidden xl:inline text-xs font-bold uppercase tracking-widest">Dashboard</span>
+                                    </Link>
+                                    <button
+                                        onClick={() => logout()}
+                                        className="flex items-center gap-2 text-brand-medium hover:text-brand-dark transition-colors px-3 py-2 rounded-lg hover:bg-brand-light"
+                                    >
+                                        <LogOut size={18} />
+                                        <span className="hidden xl:inline text-xs font-bold uppercase tracking-widest">Logout</span>
+                                    </button>
+                                </div>
+                            ) : (
+                                <Link
+                                    to="/login"
+                                    className="flex items-center gap-2 bg-brand-primary text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-dark transition-all shadow-lg shadow-brand-primary/20 active:scale-95"
+                                >
+                                    <LogIn size={16} />
+                                    <span>Login</span>
+                                </Link>
+                            )}
+                        </div>
                     </div>
                 </div>
             </header>
 
-            <main className="max-w-[1600px] mx-auto p-6 h-[calc(100vh-84px)]">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-full">
+            {/* Mobile Menu Overlay */}
+            <AnimatePresence>
+                {isMobileMenuOpen && (
+                    <>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="fixed inset-0 bg-brand-dark/50 backdrop-blur-sm z-50 lg:hidden"
+                        />
+                        <motion.div
+                            initial={{ x: '100%' }}
+                            animate={{ x: 0 }}
+                            exit={{ x: '100%' }}
+                            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                            className="fixed top-0 right-0 w-3/4 max-w-sm h-full bg-white z-[51] shadow-2xl p-6 flex flex-col lg:hidden"
+                        >
+                            <div className="flex items-center justify-between mb-8">
+                                <span className="font-bold text-xl text-brand-dark">Menu</span>
+                                <button
+                                    onClick={() => setIsMobileMenuOpen(false)}
+                                    className="p-2 text-brand-medium hover:bg-brand-light rounded-full transition-colors"
+                                >
+                                    <X className="w-6 h-6" />
+                                </button>
+                            </div>
+
+                            <div className="flex flex-col gap-6">
+                                <div className="space-y-4">
+                                    <h3 className="text-xs font-bold uppercase tracking-widest text-brand-medium">Controls</h3>
+                                    <div className="flex items-center justify-between bg-brand-light/30 p-4 rounded-xl">
+                                        <span className="font-bold text-brand-dark text-sm">Review Mode</span>
+                                        <button
+                                            onClick={() => setReviewMode(!reviewMode)}
+                                            className={`w-12 h-6 rounded-full transition-all duration-300 relative ${reviewMode ? 'bg-brand-primary' : 'bg-brand-medium/30'}`}
+                                        >
+                                            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-300 ${reviewMode ? 'right-0.5' : 'left-0.5'}`} />
+                                        </button>
+                                    </div>
+
+                                    <button
+                                        onClick={() => {
+                                            handleSOS();
+                                            setIsMobileMenuOpen(false);
+                                        }}
+                                        className="w-full bg-red-600 text-white border border-red-600 px-4 py-3 rounded-xl font-bold text-sm uppercase tracking-wide flex items-center justify-center gap-2 hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20"
+                                    >
+                                        <AlertTriangle size={18} />
+                                        <span>Emergency SOS</span>
+                                    </button>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <h3 className="text-xs font-bold uppercase tracking-widest text-brand-medium mb-2">Navigation</h3>
+                                    {currentUser ? (
+                                        <>
+                                            <Link
+                                                to="/dashboard"
+                                                onClick={() => setIsMobileMenuOpen(false)}
+                                                className="flex items-center gap-3 w-full p-4 rounded-xl hover:bg-brand-light text-brand-dark transition-colors font-bold"
+                                            >
+                                                <LayoutDashboard size={20} className="text-brand-primary" />
+                                                Dashboard
+                                            </Link>
+                                            <button
+                                                onClick={() => {
+                                                    logout();
+                                                    setIsMobileMenuOpen(false);
+                                                }}
+                                                className="flex items-center gap-3 w-full p-4 rounded-xl hover:bg-brand-light text-brand-dark transition-colors font-bold"
+                                            >
+                                                <LogOut size={20} className="text-brand-primary" />
+                                                Logout
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <Link
+                                            to="/login"
+                                            onClick={() => setIsMobileMenuOpen(false)}
+                                            className="flex items-center gap-3 w-full p-4 rounded-xl hover:bg-brand-light text-brand-dark transition-colors font-bold"
+                                        >
+                                            <LogIn size={20} className="text-brand-primary" />
+                                            Login
+                                        </Link>
+                                    )}
+                                </div>
+                            </div>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
+
+            <main className="max-w-[1600px] mx-auto px-4 py-6 pb-24 lg:p-6 h-[calc(100vh-84px)]">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 h-full">
                     {/* CHAT SECTION */}
                     <section className={`lg:col-span-5 xl:col-span-4 flex flex-col h-full bg-white rounded-3xl shadow-xl border border-brand-light overflow-hidden ${mobileTab === 'chat' ? 'block' : 'hidden lg:flex'}`}>
                         <div className="p-4 border-b border-brand-light bg-brand-light/20">
@@ -243,7 +437,10 @@ const Home: React.FC = () => {
                     </section>
 
                     {/* ANALYTICS SECTION */}
-                    <section className={`lg:col-span-7 xl:col-span-8 h-full overflow-y-auto no-scrollbar pr-1 ${mobileTab === 'dashboard' ? 'block' : 'hidden lg:block'}`}>
+                    <section
+                        ref={dashboardScrollRef}
+                        className={`lg:col-span-7 xl:col-span-8 h-full overflow-y-auto no-scrollbar pr-1 ${mobileTab === 'dashboard' ? 'block' : 'hidden lg:block'}`}
+                    >
                         {reviewMode && (
                             <div className="mb-4 p-4 bg-brand-dark rounded-2xl shadow-lg text-white animate-fade-in border border-brand-primary/30">
                                 <div className="flex items-center justify-between">
