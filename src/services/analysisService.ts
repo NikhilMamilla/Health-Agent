@@ -53,6 +53,7 @@ export const analyzeMessage = async (message: string, mode: 'user' | 'review' = 
 
         if (!response.ok) {
             const errorData = await response.json();
+            console.error('Detailed Backend Error:', errorData); // Log full debug info
             throw new Error(errorData.error || 'Failed to analyze message');
         }
 
@@ -75,6 +76,7 @@ export const triggerSOS = async (emergencyContacts: any[] = []): Promise<any> =>
 
         if (!response.ok) {
             const errorData = await response.json();
+            console.error('Detailed SOS Error:', errorData);
             throw new Error(errorData.error || 'Failed to trigger SOS');
         }
 

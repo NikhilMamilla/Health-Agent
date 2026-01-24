@@ -10,8 +10,14 @@ import traceback
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+import sys
+# Ensure the current directory (api/) is in the path for imports
+current_dir = os.path.dirname(__file__)
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
 # Add local nltk_data path for Vercel deployment
-nltk_data_path = os.path.join(os.path.dirname(__file__), 'nltk_data')
+nltk_data_path = os.path.join(current_dir, 'nltk_data')
 if os.path.exists(nltk_data_path):
     os.environ['NLTK_DATA'] = nltk_data_path # Explicitly set for NLTK
     if nltk_data_path not in nltk.data.path:
