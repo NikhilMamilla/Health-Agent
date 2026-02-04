@@ -1,15 +1,18 @@
 {
+  "version": 2,
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api/index.py"
+      "source": "/api/sos/trigger",
+      "destination": "/api/sos/trigger"
     },
     {
       "source": "/(.*)",
       "destination": "/index.html"
     }
   ],
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "framework": null
+  "functions": {
+    "api/sos/trigger.py": {
+      "runtime": "vercel-python@0.8.0"
+    }
+  }
 }
