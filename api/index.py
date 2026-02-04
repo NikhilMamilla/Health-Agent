@@ -48,6 +48,7 @@ def analyze():
 @app.route('/api/sos/trigger', methods=['POST'])
 def trigger_sos():
     if not sos_service:
+        logger.error("SOS service not initialized")
         return jsonify({"error": "SOS service failed to initialize. Check logs."}), 500
     
     """
@@ -60,16 +61,27 @@ def trigger_sos():
     }
     """
     try:
-        data = request.get_json() or {}
+        # Log the incoming request
+        logger.info("Received SOS trigger request")
+        
+        # Handle case where request body might be empty or malformed
+        try:
+            data = request.get_json(force=True) or {}
+        except Exception as parse_error:
+            logger.error(f"Failed to parse JSON: {parse_error}")
+            return jsonify({"error": "Invalid JSON in request body"}), 400
+            
         emergency_contacts = data.get('emergency_contacts', [])
         user_location = data.get('user_location')  # Optional
         user_info = data.get('user_info')          # Optional
         
+        logger.info(f"Processing SOS with {len(emergency_contacts)} contacts")
+        
         result = sos_service.trigger_sos(emergency_contacts, user_location, user_info)
         return jsonify(result), 200
     except Exception as e:
-        logger.error(f"SOS trigger error: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"SOS trigger error: {e}", exc_info=True)
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 @app.route('/api/health', methods=['GET'])
 def health_check():

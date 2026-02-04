@@ -50,127 +50,143 @@ class SOSService:
             user_location: Dict with lat/lng or address
             user_info: Dict with user details (name, uid, etc.)
         """
-        logger.info("🚨 SOS TRIGGERED - EMERGENCY PROTOCOL ACTIVATED 🚨")
-        
-        # Use provided contacts or fallback to mock
-        contacts = emergency_contacts if emergency_contacts and isinstance(emergency_contacts, list) else MOCK_EMERGENCY_CONTACTS
-        
-        if not contacts:
-            logger.warning("⚠️ No emergency contacts found. SOS alert could not be sent.")
-            return {
-                "sos_triggered": False,
-                "message": "No emergency contacts found in profile. Please add contacts to enable SOS alerts.",
-                "contacts_notified": []
-            }
-
-        # Prepare location info
-        location_info = ""
-        if user_location:
-            if 'lat' in user_location and 'lng' in user_location:
-                location_info = f"Location: {user_location['lat']}, {user_location['lng']}"
-                # Optional: Add Google Maps link
-                location_info += f" | Map: https://maps.google.com/?q={user_location['lat']},{user_location['lng']}"
-            elif 'address' in user_location:
-                location_info = f"Address: {user_location['address']}"
-        
-        # Prepare user info
-        user_name = 'User'
-        user_uid = 'Unknown'
-        if user_info and isinstance(user_info, dict):
-            user_name = user_info.get('name', 'User')
-            user_uid = user_info.get('uid', 'Unknown')
-        
-        results = []
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        if self.client and self.from_number:
-            logger.info(f"📱 Sending real SMS alerts to {len(contacts)} contacts...")
+        try:
+            logger.info("🚨 SOS TRIGGERED - EMERGENCY PROTOCOL ACTIVATED 🚨")
             
-            for contact in contacts:
-                try:
-                    name = 'Contact'
-                    phone = None
-                    
-                    if isinstance(contact, dict):
-                        name = contact.get('name', 'Contact')
-                        phone = contact.get('phone')
-                    else:
-                        # Handle case where contact might be a string
-                        name = str(contact)
-                        phone = str(contact)
-                    
-                    if not self._is_valid_phone(phone):
-                        logger.warning(f"⏩ Skipping invalid phone number for {name}: {phone}")
+            # Use provided contacts or fallback to mock
+            contacts = emergency_contacts if emergency_contacts and isinstance(emergency_contacts, list) else MOCK_EMERGENCY_CONTACTS
+            
+            if not contacts:
+                logger.warning("⚠️ No emergency contacts found. SOS alert could not be sent.")
+                return {
+                    "sos_triggered": False,
+                    "message": "No emergency contacts found in profile. Please add contacts to enable SOS alerts.",
+                    "contacts_notified": []
+                }
+
+            # Prepare location info
+            location_info = ""
+            if user_location:
+                if isinstance(user_location, dict):
+                    if 'lat' in user_location and 'lng' in user_location:
+                        try:
+                            location_info = f"Location: {float(user_location['lat']):.6f}, {float(user_location['lng']):.6f}"
+                            # Optional: Add Google Maps link
+                            location_info += f" | Map: https://maps.google.com/?q={user_location['lat']},{user_location['lng']}"
+                        except (ValueError, TypeError) as e:
+                            logger.warning(f"Invalid location coordinates: {e}")
+                            location_info = "Location: Invalid coordinates"
+                    elif 'address' in user_location:
+                        location_info = f"Address: {user_location['address']}"
+                else:
+                    logger.warning(f"Invalid user_location type: {type(user_location)}")
+        
+            # Prepare user info
+            user_name = 'User'
+            user_uid = 'Unknown'
+            if user_info and isinstance(user_info, dict):
+                user_name = user_info.get('name', 'User')
+                user_uid = user_info.get('uid', 'Unknown')
+        
+            results = []
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+            if self.client and self.from_number:
+                logger.info(f"📱 Sending real SMS alerts to {len(contacts)} contacts...")
+                
+                for contact in contacts:
+                    try:
+                        name = 'Contact'
+                        phone = None
+                        
+                        if isinstance(contact, dict):
+                            name = contact.get('name', 'Contact')
+                            phone = contact.get('phone')
+                        else:
+                            # Handle case where contact might be a string
+                            name = str(contact)
+                            phone = str(contact)
+                        
+                        if not self._is_valid_phone(phone):
+                            logger.warning(f"⏩ Skipping invalid phone number for {name}: {phone}")
+                            results.append({
+                                "name": name,
+                                "phone": str(phone),
+                                "status": "skipped",
+                                "error": "Invalid phone number format",
+                                "timestamp": timestamp
+                            })
+                            continue
+
+                        # Simplified message for better delivery in India (Carrier filters are strict)
+                        message_body = (
+                            f"KIDDOO SOS ALERT: {user_name} needs support. "
+                            f"Time: {timestamp}. {location_info}. "
+                            f"Please check on them."
+                        )
+                        
+                        message = self.client.messages.create(
+                            body=message_body,
+                            from_=self.from_number,
+                            to=str(phone)
+                        )
+                        
+                        logger.info(f"✅ SMS sent to {name} ({phone}): {message.sid}")
                         results.append({
-                            "name": name,
+                            "name": name, 
                             "phone": str(phone),
-                            "status": "skipped",
-                            "error": "Invalid phone number format",
+                            "status": "sent", 
+                            "sid": message.sid,
                             "timestamp": timestamp
                         })
-                        continue
-
-                    # Simplified message for better delivery in India (Carrier filters are strict)
-                    message_body = (
-                        f"KIDDOO SOS ALERT: {user_name} needs support. "
-                        f"Time: {timestamp}. {location_info}. "
-                        f"Please check on them."
-                    )
-                    
-                    message = self.client.messages.create(
-                        body=message_body,
-                        from_=self.from_number,
-                        to=str(phone)
-                    )
-                    
-                    logger.info(f"✅ SMS sent to {name} ({phone}): {message.sid}")
-                    results.append({
-                        "name": name, 
-                        "phone": str(phone),
-                        "status": "sent", 
-                        "sid": message.sid,
-                        "timestamp": timestamp
-                    })
-                        
-                except Exception as e:
-                    logger.error(f"❌ Failed to send SMS to {contact}: {e}")
-                    name = str(contact) if not isinstance(contact, dict) else contact.get('name', 'Unknown')
-                    phone = str(contact) if not isinstance(contact, dict) else contact.get('phone', 'Unknown')
+                            
+                    except Exception as e:
+                        logger.error(f"❌ Failed to send SMS to {contact}: {e}")
+                        name = str(contact) if not isinstance(contact, dict) else contact.get('name', 'Unknown')
+                        phone = str(contact) if not isinstance(contact, dict) else contact.get('phone', 'Unknown')
+                        results.append({
+                            "name": name,
+                            "phone": phone,
+                            "status": "failed", 
+                            "error": str(e),
+                            "timestamp": timestamp
+                        })
+            else:
+                logger.warning("⚠️  Twilio not configured properly. Using Mock Logic.")
+                results = []
+                for c in contacts:
+                    if isinstance(c, dict):
+                        name = c.get('name', 'Mock Contact')
+                        phone = c.get('phone', 'Unknown')
+                    else:
+                        name = str(c)
+                        phone = str(c)
                     results.append({
                         "name": name,
                         "phone": phone,
-                        "status": "failed", 
-                        "error": str(e),
+                        "status": "mock_sent",
                         "timestamp": timestamp
                     })
-        else:
-            logger.warning("⚠️  Twilio not configured properly. Using Mock Logic.")
-            results = []
-            for c in contacts:
-                if isinstance(c, dict):
-                    name = c.get('name', 'Mock Contact')
-                    phone = c.get('phone', 'Unknown')
-                else:
-                    name = str(c)
-                    phone = str(c)
-                results.append({
-                    "name": name,
-                    "phone": phone,
-                    "status": "mock_sent",
-                    "timestamp": timestamp
-                })
 
-        # Final check if anything was actually sent
-        any_notified = any(r['status'] in ['sent', 'mock_sent'] for r in results)
+            # Final check if anything was actually sent
+            any_notified = any(r['status'] in ['sent', 'mock_sent'] for r in results)
 
-        return {
-            "sos_triggered": any_notified,
-            "contacts_notified": results,
-            "message": "Emergency response sequence initiated" if any_notified else "Emergency alert failed or skipped due to invalid contacts",
-            "timestamp": timestamp,
-            "user_location": user_location,
-            "user_info": user_info
-        }
+            return {
+                "sos_triggered": any_notified,
+                "contacts_notified": results,
+                "message": "Emergency response sequence initiated" if any_notified else "Emergency alert failed or skipped due to invalid contacts",
+                "timestamp": timestamp,
+                "user_location": user_location,
+                "user_info": user_info
+            }
+        except Exception as e:
+            logger.error(f"❌ Critical error in SOS trigger: {e}", exc_info=True)
+            return {
+                "sos_triggered": False,
+                "message": f"System error occurred: {str(e)}",
+                "contacts_notified": [],
+                "error": str(e)
+            }
 
     def no_action(self):
         return {
