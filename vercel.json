@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/sos/trigger",
-      "destination": "/api/sos/trigger"
+      "destination": "/api/sos_trigger"
     },
     {
       "source": "/(.*)",
@@ -11,7 +11,7 @@
     }
   ],
   "functions": {
-    "api/sos/trigger": {
+    "api/sos_trigger.py": {
       "runtime": "vercel-python@0.8.0"
     }
   }
