@@ -64,14 +64,28 @@ export const analyzeMessage = async (message: string, mode: 'user' | 'review' = 
     }
 };
 
-export const triggerSOS = async (emergencyContacts: any[] = []): Promise<any> => {
+/**
+ * Triggers the SOS emergency protocol with enhanced data
+ * @param emergencyContacts - Array of emergency contacts
+ * @param userLocation - Optional location data {lat, lng} or {address}
+ * @param userInfo - Optional user information {name, uid}
+ */
+export const triggerSOS = async (
+    emergencyContacts: Array<{ name: string; phone: string }>,
+    userLocation?: { lat: number; lng: number } | { address: string },
+    userInfo?: { name: string; uid: string }
+) => {
     try {
         const response = await fetch(`${API_BASE_URL}/sos/trigger`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ emergency_contacts: emergencyContacts })
+            body: JSON.stringify({
+                emergency_contacts: emergencyContacts,
+                user_location: userLocation,
+                user_info: userInfo
+            })
         });
 
         if (!response.ok) {

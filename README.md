@@ -67,3 +67,40 @@ export default tseslint.config([
   },
 ])
 ```
+
+# KIDDOO - Mental Health Support Agent
+
+A compassionate AI-powered mental health companion that provides emotional support, crisis detection, and emergency response capabilities.
+
+## 🚨 Real-Time SOS Emergency System
+
+KIDDOO features a fully integrated emergency response system powered by Twilio SMS.
+
+### Features
+- **Automatic Crisis Detection**: Identifies critical distress keywords and autonomously triggers emergency alerts
+- **Manual SOS Button**: Users can instantly trigger emergency alerts
+- **Location Awareness**: Shares precise GPS coordinates with emergency contacts
+- **Real-time Status Updates**: Visual feedback on SMS delivery status
+- **Multi-contact Notification**: Sends alerts to multiple emergency contacts simultaneously
+
+### How It Works
+1. **Detection**: System monitors conversations for crisis indicators
+2. **Trigger**: Either automatically (critical keywords) or manually (SOS button)
+3. **Location**: Requests user's current location (with permission)
+4. **Notification**: Sends detailed SMS to all emergency contacts with:
+   - User identification
+   - Timestamp
+   - Precise location with Google Maps link
+   - Urgency level
+
+### Setup Instructions
+See [TWILIO_SETUP_GUIDE.md](./TWILIO_SETUP_GUIDE.md) for complete setup instructions.
+
+### Testing
+```bash
+# Test backend service
+python api/test_sos.py
+
+# Check service health
+curl http://localhost:5000/api/health
+```

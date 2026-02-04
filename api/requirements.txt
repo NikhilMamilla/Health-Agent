@@ -3,3 +3,4 @@ flask-cors
 nltk
 textblob
 twilio
+python-dotenv

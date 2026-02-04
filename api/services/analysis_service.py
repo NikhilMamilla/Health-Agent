@@ -48,7 +48,7 @@ class AnalysisService:
             
         return "Stable"
 
-    def perform_full_analysis(self, message, mode='user', history=[]):
+    def perform_full_analysis(self, message, mode='user', history=[], emergency_contacts=None):
         # 1. Sentiment Analysis
         sentiment = self.sentiment_analyzer.analyze(message)
         
@@ -95,7 +95,8 @@ class AnalysisService:
         # 9. Autonomous Action (SOS)
         sos_action = {"sos_triggered": False, "message": "No emergency action required"}
         if state == CRITICAL:
-            sos_action = self.sos_service.trigger_sos()
+            # Pass user contacts for autonomous trigger
+            sos_action = self.sos_service.trigger_sos(emergency_contacts=emergency_contacts)
             
         full_response = {
             "prediction_result": state,

@@ -12,7 +12,7 @@ import type { Message } from '../types/chat';
 import type { TypingMetrics } from '../types/metrics';
 import type { BDIResult } from '../types/bdi';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Heart, AlertTriangle, Menu, History, Fingerprint, LogOut, LayoutDashboard, LogIn, X } from 'lucide-react';
+import { Heart, AlertTriangle, Menu, History, Fingerprint, LogOut, LayoutDashboard, LogIn, X, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import { db } from '../config/firebase';
@@ -126,16 +126,52 @@ const Home: React.FC = () => {
 
     const handleSOS = async () => {
         try {
+            // Show loading state
+            setIsEmergencyActive(true);
+            setSosData({ message: "Locating your position...", contacts_notified: [] });
+
             // Get latest contacts
             let contacts = [];
+            let userName = "User";
             if (currentUser) {
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-                contacts = userDoc.data()?.emergencyContacts || [];
+                const userData = userDoc.data();
+                contacts = userData?.emergencyContacts || [];
+                userName = userData?.displayName || userData?.name || "User";
             }
 
-            const result = await triggerSOS(contacts);
+            // Request location permission
+            let locationData = null;
+            try {
+                const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 300000 // 5 minutes cache
+                    });
+                });
+
+                locationData = {
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude
+                };
+
+                console.log("📍 Location acquired:", locationData);
+            } catch (geoError) {
+                console.warn("⚠️ Location access denied or unavailable:", geoError);
+                // Continue without location
+            }
+
+            // Prepare user info
+            const userInfo = currentUser ? {
+                name: userName,
+                uid: currentUser.uid
+            } : undefined;
+
+            // Trigger SOS with all data
+            const result = await triggerSOS(contacts, locationData, userInfo);
+
             setSosData(result);
-            setIsEmergencyActive(true);
 
             // Save SOS log if logged in
             if (currentUser) {
@@ -145,7 +181,9 @@ const Home: React.FC = () => {
                         timestamp: new Date().toISOString(),
                         type: 'Manual Trigger',
                         message: result.message || 'Manual SOS Triggered',
-                        contacts_notified: result.contacts_notified || []
+                        contacts_notified: result.contacts_notified || [],
+                        location: locationData,
+                        user_info: userInfo
                     });
                 } catch (dbError) {
                     console.error("Error saving SOS log to Firestore:", dbError);
@@ -153,7 +191,11 @@ const Home: React.FC = () => {
             }
         } catch (err: any) {
             console.error('SOS Trigger Failed:', err);
-            setIsEmergencyActive(true);
+            setSosData({
+                message: "Failed to trigger SOS. Please try again.",
+                contacts_notified: [],
+                error: err.message
+            });
         }
     };
 
@@ -236,7 +278,7 @@ const Home: React.FC = () => {
                                     timestamp: new Date().toISOString(),
                                     type: 'Autonomous Trigger',
                                     message: analysisResult.autonomous_action.message,
-                                    contacts_notified: ["Parent", "Emergency Services"] // Mock data
+                                    contacts_notified: analysisResult.autonomous_action.contacts_notified || []
                                 });
                             } catch (error) {
                                 console.error("Error logging auto-SOS:", error);
@@ -331,6 +373,13 @@ const Home: React.FC = () => {
                                         <LayoutDashboard size={18} />
                                         <span className="hidden xl:inline text-xs font-bold uppercase tracking-widest">Dashboard</span>
                                     </Link>
+                                    <Link
+                                        to="/profile"
+                                        className="flex items-center gap-2 text-brand-medium hover:text-brand-primary transition-colors px-3 py-2 rounded-lg hover:bg-brand-light"
+                                    >
+                                        <User size={18} />
+                                        <span className="hidden xl:inline text-xs font-bold uppercase tracking-widest">Profile</span>
+                                    </Link>
                                     <button
                                         onClick={() => logout()}
                                         className="flex items-center gap-2 text-brand-medium hover:text-brand-dark transition-colors px-3 py-2 rounded-lg hover:bg-brand-light"
@@ -417,6 +466,14 @@ const Home: React.FC = () => {
                                             >
                                                 <LayoutDashboard size={20} className="text-brand-primary" />
                                                 Dashboard
+                                            </Link>
+                                            <Link
+                                                to="/profile"
+                                                onClick={() => setIsMobileMenuOpen(false)}
+                                                className="flex items-center gap-3 w-full p-4 rounded-xl hover:bg-brand-light text-brand-dark transition-colors font-bold"
+                                            >
+                                                <User size={20} className="text-brand-primary" />
+                                                My Profile
                                             </Link>
                                             <button
                                                 onClick={() => {

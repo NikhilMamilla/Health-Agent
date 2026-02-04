@@ -1,97 +1,87 @@
-import os
-import nltk
-import logging
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from services.analysis_service import AnalysisService
+from services.sos_service import SOSService
+import logging
+import os
 
-import traceback
-
-# Configure Logging
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-import sys
-# Ensure the current directory (api/) is in the path for imports
-current_dir = os.path.dirname(__file__)
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
-
-# Add local nltk_data path for Vercel deployment
-nltk_data_path = os.path.join(current_dir, 'nltk_data')
-if os.path.exists(nltk_data_path):
-    os.environ['NLTK_DATA'] = nltk_data_path # Explicitly set for NLTK
-    if nltk_data_path not in nltk.data.path:
-        nltk.data.path.append(nltk_data_path)
-    logger.info(f"NLTK data path added: {nltk_data_path}")
-else:
-    logger.warning(f"NLTK data path not found: {nltk_data_path}")
 
 app = Flask(__name__)
 CORS(app)
 
-# Initialize services with error handling for easier debugging
-init_error = None
+# Initialize services
 try:
-    from services.analysis_service import AnalysisService
-    from services.sos_service import SOSService
     analysis_service = AnalysisService()
-    sos_service = SOSService()
-    logger.info("Services initialized successfully")
+    logger.info("✅ Analysis service initialized")
 except Exception as e:
-    init_error = traceback.format_exc()
-    logger.error(f"Error initializing services: {init_error}")
+    logger.error(f"❌ Failed to initialize Analysis service: {e}")
     analysis_service = None
+
+try:
+    sos_service = SOSService()
+    logger.info("✅ SOS service initialized")
+except Exception as e:
+    logger.error(f"❌ Failed to initialize SOS service: {e}")
     sos_service = None
 
 @app.route('/api/analyze', methods=['POST'])
 def analyze():
     if not analysis_service:
-        return jsonify({
-            "error": "Backend services failed to initialize.",
-            "details": init_error,
-            "path": os.getcwd(),
-            "contents": os.listdir('.')
-        }), 500
-    """
-    Main endpoint for mental health text analysis.
-    """
-    data = request.get_json()
+        return jsonify({"error": "Analysis service failed to initialize. Check logs."}), 500
     
-    if not data or 'message' not in data:
-        return jsonify({"error": "Missing 'message' field in request body"}), 400
-        
-    message = data['message']
-    mode = data.get('mode', 'user')
-    history = data.get('history', [])
-    
-    if not isinstance(message, str) or not message.strip():
-        return jsonify({"error": "Message must be a non-empty string"}), 400
-        
     try:
-        result = analysis_service.perform_full_analysis(message, mode, history)
+        data = request.get_json()
+        message = data.get('message', '')
+        mode = data.get('mode', 'user')
+        history = data.get('history', [])
+        emergency_contacts = data.get('emergency_contacts', [])
+        
+        result = analysis_service.perform_full_analysis(message, mode, history, emergency_contacts)
         return jsonify(result), 200
     except Exception as e:
+        logger.error(f"Analysis error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/sos/trigger', methods=['POST'])
 def trigger_sos():
     if not sos_service:
         return jsonify({"error": "SOS service failed to initialize. Check logs."}), 500
+    
     """
-    Manual SOS trigger endpoint.
+    Manual SOS trigger endpoint with enhanced data.
+    Expected body:
+    {
+        "emergency_contacts": [{"name": "", "phone": ""}, ...],
+        "user_location": {"lat": float, "lng": float} or {"address": ""},
+        "user_info": {"name": "", "uid": ""}
+    }
     """
     try:
         data = request.get_json() or {}
         emergency_contacts = data.get('emergency_contacts', [])
+        user_location = data.get('user_location')  # Optional
+        user_info = data.get('user_info')          # Optional
         
-        result = sos_service.trigger_sos(emergency_contacts)
+        result = sos_service.trigger_sos(emergency_contacts, user_location, user_info)
         return jsonify(result), 200
     except Exception as e:
+        logger.error(f"SOS trigger error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    return jsonify({"status": "healthy"}), 200
+    services_status = {
+        "analysis_service": analysis_service is not None,
+        "sos_service": sos_service is not None,
+        "twilio_configured": sos_service.client is not None if sos_service else False
+    }
+    return jsonify({
+        "status": "healthy",
+        "services": services_status
+    }), 200
 
 if __name__ == '__main__':
     # Using 0.0.0.0 to make it accessible outside container if needed

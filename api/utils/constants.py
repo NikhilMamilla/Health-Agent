@@ -46,4 +46,6 @@ PRECAUTIONS = {
 }
 
 # SOS Configuration
-MOCK_EMERGENCY_CONTACTS = ["Emergency Contact 1", "Emergency Contact 2"]
+# Note: Keep this empty or use valid phone numbers like "+1234567890" for testing.
+# Placeholder strings like "Contact 1" will cause Twilio to return a 400 error.
+MOCK_EMERGENCY_CONTACTS = []

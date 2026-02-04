@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db, storage } from '../config/firebase';
-import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { motion } from 'framer-motion';
 import {
@@ -38,13 +38,12 @@ const ProfilePage: React.FC = () => {
     const navigate = useNavigate();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [profile, setProfile] = useState<UserProfile>({
-        displayName: '',
-        email: '',
+        displayName: currentUser?.displayName || '',
+        email: currentUser?.email || '',
         phoneNumber: '',
-        photoURL: '',
+        photoURL: currentUser?.photoURL || '',
         emergencyContacts: []
     });
 
@@ -52,24 +51,26 @@ const ProfilePage: React.FC = () => {
     const [showContactForm, setShowContactForm] = useState(false);
 
     useEffect(() => {
-        const fetchProfile = async () => {
-            if (!currentUser) return;
-            try {
-                const docRef = doc(db, 'users', currentUser.uid);
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                    setProfile({ ...docSnap.data() as UserProfile, email: currentUser.email || '' });
-                } else {
-                    // Init basic data if doc missing
-                    setProfile(prev => ({ ...prev, displayName: currentUser.displayName || '', email: currentUser.email || '' }));
-                }
-            } catch (err) {
-                console.error("Error fetching profile:", err);
-            } finally {
-                setLoading(false);
+        if (!currentUser) return;
+
+        const docRef = doc(db, 'users', currentUser.uid);
+        const unsubscribe = onSnapshot(docRef, (docSnap) => {
+            if (docSnap.exists()) {
+                setProfile(prev => ({
+                    ...prev,
+                    ...docSnap.data() as UserProfile,
+                    email: currentUser.email || ''
+                }));
             }
-        };
-        fetchProfile();
+        }, (error) => {
+            if (error.code === 'unavailable') {
+                console.warn("Profile data is currently offline. Using cached/session data.");
+            } else {
+                console.error("Error loading profile:", error);
+            }
+        });
+
+        return () => unsubscribe();
     }, [currentUser]);
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -97,15 +98,17 @@ const ProfilePage: React.FC = () => {
     const handleSaveProfile = async () => {
         if (!currentUser) return;
         setSaving(true);
+        console.log("Saving profile for user:", currentUser.uid);
         try {
-            await updateDoc(doc(db, 'users', currentUser.uid), {
+            await setDoc(doc(db, 'users', currentUser.uid), {
                 displayName: profile.displayName,
-                phoneNumber: profile.phoneNumber
-            });
+                phoneNumber: profile.phoneNumber,
+                email: currentUser.email // Ensure email is always there
+            }, { merge: true });
             alert("Profile updated successfully!");
         } catch (error) {
             console.error("Error updating profile:", error);
-            alert("Failed to save profile.");
+            alert("Failed to save profile. Please check your connection.");
         } finally {
             setSaving(false);
         }
@@ -114,19 +117,24 @@ const ProfilePage: React.FC = () => {
     const addContact = async () => {
         if (!currentUser || !newContact.name || !newContact.phone) return;
         setSaving(true);
+        console.log("Adding emergency contact:", newContact);
         try {
-            await updateDoc(doc(db, 'users', currentUser.uid), {
+            await setDoc(doc(db, 'users', currentUser.uid), {
                 emergencyContacts: arrayUnion(newContact)
-            });
-            setProfile(prev => ({
-                ...prev,
-                emergencyContacts: [...prev.emergencyContacts, newContact]
-            }));
+            }, { merge: true });
+
+            // Success - clear form and stop loading
             setNewContact({ name: '', phone: '', relation: '' });
             setShowContactForm(false);
-        } catch (error) {
+            console.log("Contact successfully synced to cloud");
+        } catch (error: any) {
             console.error("Error adding contact:", error);
-            alert("Failed to add contact.");
+            // If it's a permission error, let the user know
+            if (error.code === 'permission-denied') {
+                alert("Permission Denied: Please check your Firebase Security Rules.");
+            } else {
+                alert("Still syncing to cloud... it will appear once online.");
+            }
         } finally {
             setSaving(false);
         }
@@ -137,13 +145,9 @@ const ProfilePage: React.FC = () => {
         if (!window.confirm(`Remove ${contact.name} from emergency contacts?`)) return;
         setSaving(true);
         try {
-            await updateDoc(doc(db, 'users', currentUser.uid), {
+            await setDoc(doc(db, 'users', currentUser.uid), {
                 emergencyContacts: arrayRemove(contact)
-            });
-            setProfile(prev => ({
-                ...prev,
-                emergencyContacts: prev.emergencyContacts.filter(c => c.phone !== contact.phone)
-            }));
+            }, { merge: true });
         } catch (error) {
             console.error("Error removing contact:", error);
         } finally {
@@ -151,7 +155,7 @@ const ProfilePage: React.FC = () => {
         }
     };
 
-    if (loading) {
+    if (!currentUser) {
         return (
             <div className="min-h-screen bg-brand-light flex items-center justify-center">
                 <Loader2 className="w-10 h-10 text-brand-primary animate-spin" />
@@ -347,10 +351,11 @@ const ProfilePage: React.FC = () => {
                                     </button>
                                     <button
                                         onClick={addContact}
-                                        disabled={!newContact.name || !newContact.phone}
-                                        className="flex-1 py-3 bg-brand-dark text-white text-xs font-bold rounded-xl hover:bg-black transition-colors disabled:opacity-50"
+                                        disabled={saving || !newContact.name || !newContact.phone}
+                                        className="flex-1 py-3 bg-brand-dark text-white text-xs font-bold rounded-xl hover:bg-black transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                                     >
-                                        Add Contact
+                                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                                        {saving ? 'Adding...' : 'Add Contact'}
                                     </button>
                                 </div>
                             </motion.div>
