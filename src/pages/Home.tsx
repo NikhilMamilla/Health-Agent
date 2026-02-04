@@ -169,7 +169,7 @@ const Home: React.FC = () => {
             } : undefined;
 
             // Trigger SOS with all data
-            const result = await triggerSOS(contacts, locationData, userInfo);
+            const result = await triggerSOS(contacts, locationData ?? undefined, userInfo);
 
             setSosData(result);
 
@@ -278,7 +278,7 @@ const Home: React.FC = () => {
                                     timestamp: new Date().toISOString(),
                                     type: 'Autonomous Trigger',
                                     message: analysisResult.autonomous_action.message,
-                                    contacts_notified: analysisResult.autonomous_action.contacts_notified || []
+                                    contacts_notified: []
                                 });
                             } catch (error) {
                                 console.error("Error logging auto-SOS:", error);

@@ -1,6 +1,6 @@
 import React from 'react';
-import { AlertTriangle, Phone, Shield, X, Activity, MapPin, Clock, User, Settings } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { AlertTriangle, Shield, X, Activity, MapPin, User } from 'lucide-react';
+// import { Link } from 'react-router-dom';
 
 interface EmergencyOverlayProps {
     onDismiss: () => void;
@@ -14,7 +14,7 @@ export const EmergencyOverlay: React.FC<EmergencyOverlayProps> = ({ onDismiss, s
 
     // Extract data
     const contacts = sosData?.contacts_notified || [];
-    const timestamp = sosData?.timestamp;
+    // const timestamp = sosData?.timestamp;
     const location = sosData?.user_location;
     const userInfo = sosData?.user_info;
 
