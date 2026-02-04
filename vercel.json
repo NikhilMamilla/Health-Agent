@@ -11,7 +11,7 @@
     }
   ],
   "functions": {
-    "api/sos/trigger.py": {
+    "api/sos/trigger": {
       "runtime": "vercel-python@0.8.0"
     }
   }
